@@ -1,0 +1,5 @@
+PURPOSE:
+Prevent addons with network functions from running inside Kerbal Space Program
+
+TODO:
+Make sure we run at every scene load (or whenever Unity would instantiate other monobehaviors we object to). Just need to call disableViolators() in that event.
