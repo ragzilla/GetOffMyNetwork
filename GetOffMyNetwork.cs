@@ -20,6 +20,7 @@ using Mono.Cecil;
 using Mono.Cecil.Cil;
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -36,45 +37,101 @@ namespace GetOffMyNetwork
         private Dictionary<string, bool> _permitted;
         private Dictionary<string, Assembly> _assemblies;
         private Dictionary<string, string> _hashes;
+        private Dictionary<string, ConfigNode> _nodes;
+
+        private static string configpath;
+        private static ConfigNode confignode;
 
         void Start()
         {
-            Debug.Log("[GetOffMyNetwork] Started");
+            bool newviolators = false;
 
             _assemblies = new Dictionary<string, Assembly>();
             _violators = new Dictionary<string, Assembly>();
             _permitted = new Dictionary<string, bool>();
             _hashes = new Dictionary<string, string>();
+            _nodes = new Dictionary<string, ConfigNode>();
+
+            DebugPrint("Started");
+            configpath = Path.GetDirectoryName(Uri.UnescapeDataString(new Uri(Assembly.GetExecutingAssembly().CodeBase).AbsolutePath)) + Path.DirectorySeparatorChar + "getoffmynetwork.cfg";
+
+            // try to load config
+            confignode = ConfigNode.Load(configpath);
+            if (confignode != null)
+            {
+                // DebugPrint("Parsing Config");
+                foreach (ConfigNode node in confignode.nodes)
+                {
+                    // DebugPrint("Node: {0}", Uri.UnescapeDataString(node.getNodeValue<string>("codebase", string.Empty)));
+                    _nodes.Add(Uri.UnescapeDataString(node.getNodeValue<string>("codebase", string.Empty)), node);
+                }
+            }
+            else 
+                confignode = new ConfigNode();
 
             // step through all the assemblies, and check for violations
             foreach (var assembly in getAllAssembliesWithMonobehaviors())
             {
+                bool matched = false;
                 _assemblies.Add(assembly.CodeBase, assembly);
                 _hashes.Add(assembly.CodeBase, getAssemblyHash(new Uri(assembly.CodeBase)));
-                if (checkAssemblyForViolations(assembly))
+
+                // check for confignode
+                if (_nodes.Keys.Contains(assembly.CodeBase))
                 {
-                    Debug.Log(String.Format("[GetOffMyNetwork] Module {0} contains network functions!", assembly.ToString()));
-                    _violators.Add(assembly.CodeBase, assembly);
-                    _permitted.Add(assembly.CodeBase, false);
+                    // DebugPrint("Found ConfigNode For {0}", assembly.CodeBase);
+                    var node = _nodes[assembly.CodeBase];
+                    bool permitted = node.getNodeValue<bool>("permitted", false);
+                    bool violator = node.getNodeValue<bool>("violator", false);
+                    string hash = node.getNodeValue<string>("hash", string.Empty);
+                    if (hash == _hashes[assembly.CodeBase])
+                    {
+                        matched = true;
+                        // DebugPrint("Setting matched = true for {0}", assembly.CodeBase);
+                        if (violator)
+                        {
+                            _violators.Add(assembly.CodeBase, assembly);
+                            _permitted.Add(assembly.CodeBase, false);
+                        }
+                        if (permitted)
+                            _permitted[assembly.CodeBase] = true;
+                    }
+                }
+                if (!matched)
+                {
+                    if (checkAssemblyForViolations(assembly))
+                    {
+                        DebugPrint("Module {0} contains network functions!", assembly.ToString());
+                        _violators.Add(assembly.CodeBase, assembly);
+                        _permitted.Add(assembly.CodeBase, false);
+                        newviolators = true;
+                    }
                 }
             }
 
             // I'm assuming after we pop the dialog KSP continues to process in the background, so we need to disable now then restart
+            // note: tried implementing a thread lock here but ksp deadlocks, guess blocking Start() blocks the main dispatch loop
             disableViolators();
 
-            // prompt about violators, give user opportunity to opt-in
-            var mod = new MultiOptionDialog(
-                "New plugins have been detected which might access the network. Please opt-in as you see fit. Please be aware you may need to restart KSP for these changes to take effect.",
-                new Callback(this.listViolators),
-                "GetOffMyNetwork", HighLogic.Skin, 
-                new DialogOption("OK", new Callback(this.saveViolators), true)
-                );
-            mod.dialogRect = new Rect((float)(Screen.width / 2 - 400), (float)(Screen.height / 2 - 50), 800f, 100f);
-            PopupDialog.SpawnPopupDialog(mod, true, HighLogic.Skin);
+            if (newviolators)
+            {
+                // prompt about violators, give user opportunity to opt-in
+                var mod = new MultiOptionDialog(
+                    "New plugins have been detected which might access the network. Please opt-in as you see fit. Please be aware you may need to restart KSP for these changes to take effect.",
+                    new Callback(this.listViolators),
+                    "GetOffMyNetwork", HighLogic.Skin,
+                    new DialogOption("OK", new Callback(this.saveViolators), true)
+                    );
+                mod.dialogRect = new Rect((float)(Screen.width / 2 - 400), (float)(Screen.height / 2 - 50), 800f, 100f);
+                PopupDialog.SpawnPopupDialog(mod, true, HighLogic.Skin);
+            }
+
+            DontDestroyOnLoad(this);
         }
 
         public void listViolators()
         {
+            // this callback is used in MultiOptionDialog calls to display a list of toggle/check boxes for mods we haven't whitelisted
             foreach (var key in _violators.Keys)
             {
                 Assembly violator = _violators[key];
@@ -86,7 +143,7 @@ namespace GetOffMyNetwork
                 } else { 
                     localpath = violator.CodeBase; 
                 }
-                // Debug.Log(String.Format("[GetOffMyNetwork] Adding {0} to dialog", violator));
+                // DebugPrint("Adding {0} to dialog", violator);
                 _permitted[violator.CodeBase] = GUILayout.Toggle(_permitted[violator.CodeBase], String.Format("Enable {0} ({1})?", violator.GetName().Name, localpath));
             }
         }
@@ -95,25 +152,56 @@ namespace GetOffMyNetwork
         {
             foreach (string key in _assemblies.Keys)
             {
+                ConfigNode node = getNewNode(key, _hashes[key], _violators.Keys.Contains(key), (_permitted.Keys.Contains(key) && _permitted[key]));
                 if (_permitted.Keys.Contains(key) && _permitted[key])
                 {
-                    Debug.Log(String.Format("Creating whitelist entry for {0}", key));
                     setAssemblyMonobehaviorInstanceEnabled(_violators[key], true);
                 }
-                else if (_violators.Keys.Contains(key))
+                // DebugPrint("ConfigNode for {0}: {1}", key, node);
+                if (_nodes.Keys.Contains(key))
                 {
-                    Debug.Log(String.Format("Creating blacklist entry for {0}", key));
+                    _nodes[key] = node;
                 }
                 else
                 {
-                    Debug.Log(String.Format("Creating informational entry for {0}", key));
+                    _nodes.Add(key, node);
                 }
             }
+            confignode.ClearNodes();
+            foreach (var key in _nodes.Keys)
+            {
+                confignode.AddNode(_nodes[key]);
+            }
+            // DebugPrint("Final ConfigNode: {0}", confignode);
+            confignode.Save(configpath);
+        }
+
+        private ConfigNode getNewNode(string codebase, string hash, bool violator, bool permitted)
+        {
+            var sha2 = SHA256.Create();
+            sha2.ComputeHash(getBytes(codebase));
+            var newnode = new ConfigNode(BitConverter.ToString(sha2.Hash).Replace("-", string.Empty)); // confignode is base64 encoded sha2 hash of file path
+            newnode.AddValue("codebase", Uri.EscapeUriString(codebase).Replace("/", Uri.HexEscape('/')));
+            newnode.AddValue("hash", hash);
+            newnode.AddValue("violator", violator);
+            newnode.AddValue("permitted", permitted);
+            return newnode;
+        }
+
+        private static byte[] getBytes(string str)
+        {
+            byte[] bytes = new byte[str.Length * sizeof(char)];
+            System.Buffer.BlockCopy(str.ToCharArray(), 0, bytes, 0, bytes.Length);
+            return bytes;
         }
 
         private void disableViolators()
         {
-            foreach (var key in _violators.Keys) setAssemblyMonobehaviorInstanceEnabled(_violators[key]);
+            foreach (var key in _violators.Keys)
+            {
+                if (_permitted.Keys.Contains(key) && _permitted[key] == true) continue;
+                setAssemblyMonobehaviorInstanceEnabled(_violators[key]);
+            }
         }
 
         // load the types, load the methods on the types, inspect them for network functions, return true if found
@@ -149,13 +237,13 @@ namespace GetOffMyNetwork
         {
             foreach (var type in getAllAssemblyMonobehaviours(assembly))
             {
-                Debug.Log(String.Format("[GetOffMyNetwork] Monobehaviour: {0}, Setting enabled = {1}", type, (enabled) ? "true" : "false"));
+                DebugPrint("Monobehaviour: {0}, Setting enabled = {1}", type, (enabled) ? "true" : "false");
                 //MonoBehaviour monotype = (MonoBehaviour)type;
                 //monotype.enabled = false;
                 //type.
                 foreach (MonoBehaviour instance in UnityEngine.GameObject.FindObjectsOfType(type))
                 {
-                    Debug.Log(String.Format("[GetOffMyNetwork] Found Monobehaviour Instance: {0}", instance));
+                    DebugPrint("Found Monobehaviour Instance: {0}", instance);
                     instance.enabled = enabled;
                 }
             }
@@ -177,7 +265,7 @@ namespace GetOffMyNetwork
                 }
                 catch
                 {
-                    Debug.Log("[GetOffMyNetwork] Exception in getAllAssembliesWithMonobehaviors");
+                    DebugPrint("Exception in getAllAssembliesWithMonobehaviors");
                 }
             }
             return assemblies;
@@ -195,7 +283,7 @@ namespace GetOffMyNetwork
                 }
                 catch
                 {
-                    Debug.Log("[GetOffMyNetwork] Exception in getAllAssemblyMonobehaviours");
+                    DebugPrint("Exception in getAllAssemblyMonobehaviours");
                 }
             }
             return types;
@@ -208,7 +296,32 @@ namespace GetOffMyNetwork
             var sha2 = SHA256.Create();
             sha2.ComputeHash(stream);
             stream.Close();
-            return Convert.ToBase64String(sha2.Hash);
+            return BitConverter.ToString(sha2.Hash).Replace("-", string.Empty);
+        }
+
+        private static void DebugPrint(string format, params object[] list)
+        {
+            Debug.Log(String.Format("[GetOffMyNetwork] " + format, list));
+        }
+
+        // from blizzy78 ksp_toolbar
+    }
+
+    internal static class Extensions
+    {
+        internal static T getNodeValue<T>(this ConfigNode configNode, string name, T defaultValue)
+        {
+            if (configNode.HasValue(name))
+            {
+                Type type = typeof(T);
+                TypeConverter converter = TypeDescriptor.GetConverter(type);
+                string value = configNode.GetValue(name);
+                return (T)converter.ConvertFromInvariantString(value);
+            }
+            else
+            {
+                return defaultValue;
+            }
         }
     }
 }
