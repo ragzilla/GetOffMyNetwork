@@ -33,15 +33,18 @@ namespace GetOffMyNetwork
     [KSPAddon(KSPAddon.Startup.Instantly, true)]
     internal class GetOffMyNetwork : MonoBehaviour
     {
+        // instance members for tracking the other assemblies and what they're allowed to do
         private Dictionary<string, Assembly> _violators;
         private Dictionary<string, bool> _permitted;
         private Dictionary<string, Assembly> _assemblies;
         private Dictionary<string, string> _hashes;
         private Dictionary<string, ConfigNode> _nodes;
 
+        // config file related class members
         private static string configpath;
         private static ConfigNode confignode;
 
+        // our Start() function, where the magic happens. based on how long it is this needs some major refactoring.
         void Start()
         {
             bool newviolators = false;
@@ -129,6 +132,7 @@ namespace GetOffMyNetwork
             DontDestroyOnLoad(this);
         }
 
+        // callback used by MultiOptionDialog to add toggle boxes for all current members of the violators list
         public void listViolators()
         {
             // this callback is used in MultiOptionDialog calls to display a list of toggle/check boxes for mods we haven't whitelisted
@@ -148,6 +152,7 @@ namespace GetOffMyNetwork
             }
         }
 
+        // enable/disable monobehaviours based on violator status, and serialize our config. run after config dialog is closed
         public void saveViolators()
         {
             foreach (string key in _assemblies.Keys)
@@ -176,6 +181,7 @@ namespace GetOffMyNetwork
             confignode.Save(configpath);
         }
 
+        // return a new ConfigNode based on a codebase (URI), hash, and violator/permitted bits
         private ConfigNode getNewNode(string codebase, string hash, bool violator, bool permitted)
         {
             var sha2 = SHA256.Create();
@@ -195,6 +201,7 @@ namespace GetOffMyNetwork
             return bytes;
         }
 
+        // disables monobehaviors based on assemblies in _violators, honors _permitted
         private void disableViolators()
         {
             foreach (var key in _violators.Keys)
@@ -233,6 +240,7 @@ namespace GetOffMyNetwork
             return false; // fall through, no violation
         }
 
+        // enables/disables instantiated monobehaviours in an assembly
         private static void setAssemblyMonobehaviorInstanceEnabled(Assembly assembly, Boolean enabled = false)
         {
             foreach (var type in getAllAssemblyMonobehaviours(assembly))
@@ -249,6 +257,7 @@ namespace GetOffMyNetwork
             }
         }
 
+        // returns an IEnumberable of all assemblies which contain classes deriving from UnityEngine.Monobehaviour
         private static IEnumerable<Assembly> getAllAssembliesWithMonobehaviors()
         {
             List<Assembly> assemblies = new List<Assembly>();
@@ -271,6 +280,7 @@ namespace GetOffMyNetwork
             return assemblies;
         }
 
+        // returns an IEnumerable of all Monobehaviour derived classes in a given Assembly
         private static IEnumerable<Type> getAllAssemblyMonobehaviours(Assembly assembly)
         {
             List<Type> types = new List<Type>();
@@ -289,6 +299,8 @@ namespace GetOffMyNetwork
             return types;
         }
 
+        // returns sha256 hash in hexidecimal format for a given Uri path, we use Uris instead of plain strings to workaround temp directory issues under test frameworks
+        // which we aren't currently using, but you never know
         private static string getAssemblyHash(Uri path)
         {
             if (!path.IsFile) return ""; // should never hit this, but safety first
@@ -299,16 +311,18 @@ namespace GetOffMyNetwork
             return BitConverter.ToString(sha2.Hash).Replace("-", string.Empty);
         }
 
+        // wrapper for Debug.Log to always use String.Format and add our prefix
         private static void DebugPrint(string format, params object[] list)
         {
             Debug.Log(String.Format("[GetOffMyNetwork] " + format, list));
         }
-
-        // from blizzy78 ksp_toolbar
     }
 
+    // internal extensions for other classes
     internal static class Extensions
     {
+        // generic getNodeValue method to get a properly typed configNode value
+        // from blizzy78 ksp_toolbar
         internal static T getNodeValue<T>(this ConfigNode configNode, string name, T defaultValue)
         {
             if (configNode.HasValue(name))
