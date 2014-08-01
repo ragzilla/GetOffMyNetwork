@@ -30,24 +30,30 @@ using UnityEngine;
 
 namespace GetOffMyNetwork
 {
-    [KSPAddon(KSPAddon.Startup.Instantly, true)]
+    [KSPAddon(KSPAddon.Startup.EveryScene, false)]
     internal class GetOffMyNetwork : MonoBehaviour
     {
         // instance members for tracking the other assemblies and what they're allowed to do
-        private Dictionary<string, Assembly> _violators;
-        private Dictionary<string, bool> _permitted;
-        private Dictionary<string, Assembly> _assemblies;
-        private Dictionary<string, string> _hashes;
-        private Dictionary<string, ConfigNode> _nodes;
+        private static Dictionary<string, Assembly> _violators;
+        private static Dictionary<string, bool> _permitted;
+        private static Dictionary<string, Assembly> _assemblies;
+        private static Dictionary<string, string> _hashes;
+        private static Dictionary<string, ConfigNode> _nodes;
+
+        // flags
+        private static bool scanComplete;
 
         // config file related class members
         private static string configpath;
         private static ConfigNode confignode;
 
         // our Awake() function, moving some stuff from Start() to here to keep Start() leaner.
+        // ksp instantiates us multiple times, so we static our variables to share logic
         void Awake()
         {
-            DebugPrint("Awake");
+            if (scanComplete) return; // bail early if scanComplete set
+
+            DebugPrint("Awake - scanComplete: {0}", scanComplete);
             _assemblies = new Dictionary<string, Assembly>();
             _violators = new Dictionary<string, Assembly>();
             _permitted = new Dictionary<string, bool>();
@@ -70,16 +76,23 @@ namespace GetOffMyNetwork
             else
                 confignode = new ConfigNode();
 
+            scanComplete = false;
+
             DontDestroyOnLoad(this);
         }
 
         // our Start() function, where the (initial) magic happens.
         void Start()
         {
-            DebugPrint("Started");
+            bool newviolators = false;
+            DebugPrint("Started - scanComplete: {0}", scanComplete);
 
             // scan for assemblies which may use network methods
-            bool newviolators = scanForViolators();
+            if (!scanComplete)
+            {
+                newviolators = scanForViolators();
+                scanComplete = true;
+            }
 
             // I'm assuming after we pop the dialog KSP continues to process in the background, so we need to disable now
             // note: tried implementing a thread lock here but ksp deadlocks, guess blocking Start() blocks the main dispatch loop
