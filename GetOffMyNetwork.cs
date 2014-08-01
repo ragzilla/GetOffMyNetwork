@@ -47,6 +47,10 @@ namespace GetOffMyNetwork
         private static string configpath;
         private static ConfigNode confignode;
 
+        // applauncher
+        private static ApplicationLauncherButton GetOffMyNetworkButtonStock;
+        private static string texturepath;
+
         // our Awake() function, moving some stuff from Start() to here to keep Start() leaner.
         // ksp instantiates us multiple times, so we static our variables to share logic
         void Awake()
@@ -54,13 +58,19 @@ namespace GetOffMyNetwork
             if (scanComplete) return; // bail early if scanComplete set
 
             DebugPrint("Awake - scanComplete: {0}", scanComplete);
+
+            // set up the dictionaries
             _assemblies = new Dictionary<string, Assembly>();
             _violators = new Dictionary<string, Assembly>();
             _permitted = new Dictionary<string, bool>();
             _hashes = new Dictionary<string, string>();
             _nodes = new Dictionary<string, ConfigNode>();
 
-            configpath = Path.GetDirectoryName(Uri.UnescapeDataString(new Uri(Assembly.GetExecutingAssembly().CodeBase).AbsolutePath)) + Path.DirectorySeparatorChar + "getoffmynetwork.cfg";
+            // set up some variables
+            string basepath = Path.GetDirectoryName(Uri.UnescapeDataString(new Uri(Assembly.GetExecutingAssembly().CodeBase).AbsolutePath)) + Path.DirectorySeparatorChar;
+            configpath = basepath + "getoffmynetwork.cfg";
+            texturepath = basepath + "getoffmynetwork";
+            scanComplete = false;
 
             // try to load config
             confignode = ConfigNode.Load(configpath);
@@ -76,7 +86,8 @@ namespace GetOffMyNetwork
             else
                 confignode = new ConfigNode();
 
-            scanComplete = false;
+            // subscribe to relevant game events
+            GameEvents.onGUIApplicationLauncherReady.Add(OnGUIAppLauncherReady);
 
             DontDestroyOnLoad(this);
         }
@@ -350,6 +361,43 @@ namespace GetOffMyNetwork
             sha2.ComputeHash(stream);
             stream.Close();
             return BitConverter.ToString(sha2.Hash).Replace("-", string.Empty);
+        }
+
+        // applauncher - clicked
+        public void OnAppLaunchToggle()
+        {
+
+        }
+
+        // applauncher - OnGUIAppLauncherReady
+        public void OnGUIAppLauncherReady()
+        {
+            if (ApplicationLauncher.Ready && HighLogic.LoadedSceneIsFlight && GetOffMyNetworkButtonStock == null)
+            {
+                GetOffMyNetworkButtonStock = ApplicationLauncher.Instance.AddModApplication(
+                    OnAppLaunchToggle,
+                    OnAppLaunchToggle,
+                    null,
+                    null,
+                    null,
+                    null,
+                    ApplicationLauncher.AppScenes.SPACECENTER,
+                    (Texture)GameDatabase.Instance.GetTexture("000_StillBetterThanSpyware/getoffmynetwork", false)); // TODO: changeme to final distribution directory
+                GameEvents.onGUIApplicationLauncherReady.Remove(OnGUIAppLauncherReady);
+                GameEvents.onGUIApplicationLauncherDestroyed.Add(OnGUIAppLauncherDestroyed);
+            }
+        }
+
+        // applauncher - OnGUIAppLauncherDestroyed
+        public void OnGUIAppLauncherDestroyed()
+        {
+            if (GetOffMyNetworkButtonStock != null)
+            {
+                ApplicationLauncher.Instance.RemoveModApplication(GetOffMyNetworkButtonStock);
+                GetOffMyNetworkButtonStock = null;
+            }
+            GameEvents.onGUIApplicationLauncherDestroyed.Remove(OnGUIAppLauncherDestroyed);        
+            GameEvents.onGUIApplicationLauncherReady.Add(OnGUIAppLauncherReady);
         }
 
         // wrapper for Debug.Log to always use String.Format and add our prefix
