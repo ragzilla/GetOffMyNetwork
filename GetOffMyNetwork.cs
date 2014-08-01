@@ -42,6 +42,7 @@ namespace GetOffMyNetwork
 
         // flags
         private static bool scanComplete;
+        private static bool promptOpen;
 
         // config file related class members
         private static string configpath;
@@ -71,6 +72,7 @@ namespace GetOffMyNetwork
             configpath = basepath + "getoffmynetwork.cfg";
             texturepath = basepath + "getoffmynetwork";
             scanComplete = false;
+            promptOpen = false;
 
             // try to load config
             confignode = ConfigNode.Load(configpath);
@@ -116,6 +118,9 @@ namespace GetOffMyNetwork
         // display our MultiOptionDialog to let the user opt-in
         private void promptForOptIn()
         {
+            if (promptOpen) return; // return early if we're already open
+            promptOpen = true;
+
             // prompt about violators, give user opportunity to opt-in
             var mod = new MultiOptionDialog(
                 "New plugins have been detected which might access the network. Please opt-in as you see fit. Please be aware you will need to restart KSP for these changes to take effect.",
@@ -198,6 +203,9 @@ namespace GetOffMyNetwork
         // enable/disable monobehaviours based on violator status, and serialize our config. run after config dialog is closed
         private void saveViolators()
         {
+            // we're called after the dialog closes, so clear the flag
+            promptOpen = false;
+
             foreach (string key in _assemblies.Keys)
             {
                 ConfigNode node = getNewNode(key, _hashes[key], _violators.Keys.Contains(key), (_permitted.Keys.Contains(key) && _permitted[key]));
@@ -366,7 +374,7 @@ namespace GetOffMyNetwork
         // applauncher - clicked
         public void OnAppLaunchToggle()
         {
-
+            promptForOptIn();
         }
 
         // applauncher - OnGUIAppLauncherReady
