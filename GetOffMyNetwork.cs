@@ -128,7 +128,8 @@ namespace GetOffMyNetwork
                 "GetOffMyNetwork", HighLogic.Skin,
                 new DialogOption("OK", new Callback(this.saveViolators), true)
                 );
-            mod.dialogRect = new Rect((float)(Screen.width / 2 - 400), (float)(Screen.height / 2 - 50), 800f, 100f);
+            //mod.dialogRect = new Rect((float)(Screen.width / 2 - 400), (float)(Screen.height / 2 - 50), 800f, 100f);
+            mod.dialogRect = new Rect((float)Screen.width - 864f, (float)Screen.height - 64f, 800f, 100f); // move to upper right, reduces conflicts in spacecenter scene
             PopupDialog.SpawnPopupDialog(mod, true, HighLogic.Skin);
         }
 
