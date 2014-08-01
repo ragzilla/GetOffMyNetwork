@@ -44,18 +44,16 @@ namespace GetOffMyNetwork
         private static string configpath;
         private static ConfigNode confignode;
 
-        // our Start() function, where the magic happens. based on how long it is this needs some major refactoring.
-        void Start()
+        // our Awake() function, moving some stuff from Start() to here to keep Start() leaner.
+        void Awake()
         {
-            bool newviolators = false;
-
+            DebugPrint("Awake");
             _assemblies = new Dictionary<string, Assembly>();
             _violators = new Dictionary<string, Assembly>();
             _permitted = new Dictionary<string, bool>();
             _hashes = new Dictionary<string, string>();
             _nodes = new Dictionary<string, ConfigNode>();
 
-            DebugPrint("Started");
             configpath = Path.GetDirectoryName(Uri.UnescapeDataString(new Uri(Assembly.GetExecutingAssembly().CodeBase).AbsolutePath)) + Path.DirectorySeparatorChar + "getoffmynetwork.cfg";
 
             // try to load config
@@ -69,8 +67,46 @@ namespace GetOffMyNetwork
                     _nodes.Add(Uri.UnescapeDataString(node.getNodeValue<string>("codebase", string.Empty)), node);
                 }
             }
-            else 
+            else
                 confignode = new ConfigNode();
+
+            DontDestroyOnLoad(this);
+        }
+
+        // our Start() function, where the (initial) magic happens.
+        void Start()
+        {
+            DebugPrint("Started");
+
+            // scan for assemblies which may use network methods
+            bool newviolators = scanForViolators();
+
+            // I'm assuming after we pop the dialog KSP continues to process in the background, so we need to disable now
+            // note: tried implementing a thread lock here but ksp deadlocks, guess blocking Start() blocks the main dispatch loop
+            disableViolators();
+
+            // if we had some new assemblies found which use network functions, prompt to whitelist them
+            if (newviolators) promptForOptIn();
+        }
+
+        // display our MultiOptionDialog to let the user opt-in
+        private void promptForOptIn()
+        {
+            // prompt about violators, give user opportunity to opt-in
+            var mod = new MultiOptionDialog(
+                "New plugins have been detected which might access the network. Please opt-in as you see fit. Please be aware you will need to restart KSP for these changes to take effect.",
+                new Callback(this.listViolators),
+                "GetOffMyNetwork", HighLogic.Skin,
+                new DialogOption("OK", new Callback(this.saveViolators), true)
+                );
+            mod.dialogRect = new Rect((float)(Screen.width / 2 - 400), (float)(Screen.height / 2 - 50), 800f, 100f);
+            PopupDialog.SpawnPopupDialog(mod, true, HighLogic.Skin);
+        }
+
+        // used in Start() to scan for assemblies containing references which might access the network
+        private bool scanForViolators()
+        {
+            bool newviolators = false;
 
             // step through all the assemblies, and check for violations
             foreach (var assembly in getAllAssembliesWithMonobehaviors())
@@ -112,24 +148,7 @@ namespace GetOffMyNetwork
                 }
             }
 
-            // I'm assuming after we pop the dialog KSP continues to process in the background, so we need to disable now then restart
-            // note: tried implementing a thread lock here but ksp deadlocks, guess blocking Start() blocks the main dispatch loop
-            disableViolators();
-
-            if (newviolators)
-            {
-                // prompt about violators, give user opportunity to opt-in
-                var mod = new MultiOptionDialog(
-                    "New plugins have been detected which might access the network. Please opt-in as you see fit. Please be aware you will need to restart KSP for these changes to take effect.",
-                    new Callback(this.listViolators),
-                    "GetOffMyNetwork", HighLogic.Skin,
-                    new DialogOption("OK", new Callback(this.saveViolators), true)
-                    );
-                mod.dialogRect = new Rect((float)(Screen.width / 2 - 400), (float)(Screen.height / 2 - 50), 800f, 100f);
-                PopupDialog.SpawnPopupDialog(mod, true, HighLogic.Skin);
-            }
-
-            DontDestroyOnLoad(this);
+            return newviolators;
         }
 
         // callback used by MultiOptionDialog to add toggle boxes for all current members of the violators list
@@ -153,7 +172,7 @@ namespace GetOffMyNetwork
         }
 
         // enable/disable monobehaviours based on violator status, and serialize our config. run after config dialog is closed
-        public void saveViolators()
+        private void saveViolators()
         {
             foreach (string key in _assemblies.Keys)
             {
