@@ -372,7 +372,7 @@ namespace GetOffMyNetwork
         // applauncher - OnGUIAppLauncherReady
         public void OnGUIAppLauncherReady()
         {
-            if (ApplicationLauncher.Ready && HighLogic.LoadedSceneIsFlight && GetOffMyNetworkButtonStock == null)
+            if (ApplicationLauncher.Ready && GetOffMyNetworkButtonStock == null)
             {
                 GetOffMyNetworkButtonStock = ApplicationLauncher.Instance.AddModApplication(
                     OnAppLaunchToggle,
