@@ -120,7 +120,7 @@ namespace GetOffMyNetwork
             {
                 // prompt about violators, give user opportunity to opt-in
                 var mod = new MultiOptionDialog(
-                    "New plugins have been detected which might access the network. Please opt-in as you see fit. Please be aware you may need to restart KSP for these changes to take effect.",
+                    "New plugins have been detected which might access the network. Please opt-in as you see fit. Please be aware you will need to restart KSP for these changes to take effect.",
                     new Callback(this.listViolators),
                     "GetOffMyNetwork", HighLogic.Skin,
                     new DialogOption("OK", new Callback(this.saveViolators), true)
@@ -158,10 +158,12 @@ namespace GetOffMyNetwork
             foreach (string key in _assemblies.Keys)
             {
                 ConfigNode node = getNewNode(key, _hashes[key], _violators.Keys.Contains(key), (_permitted.Keys.Contains(key) && _permitted[key]));
-                if (_permitted.Keys.Contains(key) && _permitted[key])
-                {
-                    setAssemblyMonobehaviorInstanceEnabled(_violators[key], true);
-                }
+                // Commenting this out for now, it was the code to re-enable disabled monobehaviours in blacklisted modules that were now whitelisted
+                // but Greys' comment http://forum.kerbalspaceprogram.com/threads/88963#post1320181 makes me think this could end up with some wonky corner cases
+                // if (_permitted.Keys.Contains(key) && _permitted[key])
+                // {
+                //     setAssemblyMonobehaviorInstanceEnabled(_violators[key], true);
+                // }
                 // DebugPrint("ConfigNode for {0}: {1}", key, node);
                 if (_nodes.Keys.Contains(key))
                 {
