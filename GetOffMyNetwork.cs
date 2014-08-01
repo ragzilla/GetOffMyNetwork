@@ -280,13 +280,20 @@ namespace GetOffMyNetwork
             foreach (var type in getAllAssemblyMonobehaviours(assembly))
             {
                 DebugPrint("Monobehaviour: {0}, Setting enabled = {1}", type, (enabled) ? "true" : "false");
-                //MonoBehaviour monotype = (MonoBehaviour)type;
-                //monotype.enabled = false;
-                //type.
                 foreach (MonoBehaviour instance in UnityEngine.GameObject.FindObjectsOfType(type))
                 {
-                    DebugPrint("Found Monobehaviour Instance: {0}", instance);
-                    instance.enabled = enabled;
+                    if (instance.enabled != enabled)
+                    {
+                        DebugPrint("Found {1} Monobehaviour Instance: {0}", instance, (enabled) ? "disabled" : "enabled");
+                        instance.enabled = enabled;
+                        if (!enabled)
+                        {
+                            // stop all pending invocations and coroutines
+                            instance.CancelInvoke();
+                            instance.StopAllCoroutines();
+                            instance.Invoke("OnDestroy", 0.0f); // run the OnDestroy to trigger cleanup of anything from Awake()
+                        }
+                    }
                 }
             }
         }
